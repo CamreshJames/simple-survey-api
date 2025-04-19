@@ -1,26 +1,23 @@
-"""
-Seed script to populate the database with initial data.
-Run this script after creating the database to populate it with sample questions.
-"""
-from sqlalchemy.orm import Session # type: ignore
+import sys
+from sqlalchemy.orm import Session  # type: ignore
 from database import get_db, engine, Base
 import models
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+
+def has_questions() -> bool:
+    """Check if the database already contains any questions."""
+    db: Session = next(get_db())
+    try:
+        count = db.query(models.Question).count()
+        return count > 0
+    finally:
+        db.close()
+
 
 def seed_questions():
     """Seed the database with initial questions."""
-    # Get db session
-    db = next(get_db())
-    
+    db: Session = next(get_db())
     try:
-        # Check if we already have questions
-        existing_count = db.query(models.Question).count()
-        if existing_count > 0:
-            print("Database already has questions. Skipping seeding.")
-            return
-        
         # Question 1: Full Name
         q1 = models.Question(
             name="full_name",
@@ -30,7 +27,7 @@ def seed_questions():
             description="[Surname] [First Name] [Other Names]"
         )
         db.add(q1)
-        
+
         # Question 2: Email Address
         q2 = models.Question(
             name="email_address",
@@ -40,7 +37,7 @@ def seed_questions():
             description=""
         )
         db.add(q2)
-        
+
         # Question 3: Description
         q3 = models.Question(
             name="description",
@@ -50,7 +47,7 @@ def seed_questions():
             description=""
         )
         db.add(q3)
-        
+
         # Question 4: Gender
         q4 = models.Question(
             name="gender",
@@ -61,10 +58,8 @@ def seed_questions():
             multiple_choice=False
         )
         db.add(q4)
-        
-        # Flush to get q4 ID
         db.flush()
-        
+
         # Add gender options
         gender_options = [
             models.QuestionOption(question_id=q4.id, value="MALE", text="Male"),
@@ -72,7 +67,7 @@ def seed_questions():
             models.QuestionOption(question_id=q4.id, value="OTHER", text="Other")
         ]
         db.add_all(gender_options)
-        
+
         # Question 5: Programming Stack
         q5 = models.Question(
             name="programming_stack",
@@ -83,10 +78,8 @@ def seed_questions():
             multiple_choice=True
         )
         db.add(q5)
-        
-        # Flush to get q5 ID
         db.flush()
-        
+
         # Add programming stack options
         stack_options = [
             models.QuestionOption(question_id=q5.id, value="REACT", text="React JS"),
@@ -104,7 +97,7 @@ def seed_questions():
             models.QuestionOption(question_id=q5.id, value="PYTHON", text="Python")
         ]
         db.add_all(stack_options)
-        
+
         # Question 6: Certificates
         q6 = models.Question(
             name="certificates",
@@ -118,14 +111,23 @@ def seed_questions():
             multiple_files=True
         )
         db.add(q6)
-        
-        # Commit all changes
+
         db.commit()
         print("Database seeded successfully with questions!")
     except Exception as e:
-        print(f"Error seeding database: {e}")
         db.rollback()
+        print(f"Error seeding database: {e}")
         raise
+    finally:
+        db.close()
+
 
 if __name__ == "__main__":
+    # First, check if questions already exist
+    if has_questions():
+        print("Database already has questions. Skipping seeding.")
+        sys.exit(0)
+
+    # Create tables and seed
+    Base.metadata.create_all(bind=engine)
     seed_questions()

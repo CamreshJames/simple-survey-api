@@ -1,90 +1,96 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query # type: ignore
-from fastapi.responses import FileResponse # type: ignore
-from fastapi.middleware.cors import CORSMiddleware # type: ignore
-from sqlalchemy.orm import Session # type: ignore
+"""
+Survey API
+
+FastAPI application for handling survey questions and responses, including file uploads.
+Files are stored in Vercel's writable `/tmp/uploads` directory.
+"""
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+from pathlib import Path
 import os
 import shutil
 import uuid
-from pathlib import Path
 
-# Import database and schema models
+# Import database session, models, and schemas
 from database import get_db, Base, engine
 import models
 import schemas
 
-# Create uploads directory if it doesn't exist
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# Define uploads directory in Vercel's temp space
+UPLOAD_DIR = Path("/tmp/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
-# Create the FastAPI app
-app = FastAPI(title="Survey API", description="API for survey application")
+# Initialize FastAPI
+app = FastAPI(
+    title="Survey API",
+    description="API for survey application"
+)
 
-# Add CORS middleware
+# Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
-# Create database tables
+# Create database tables on startup
 Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def read_root():
-    """Root endpoint to check if API is running."""
+    """
+    Root endpoint to verify API is running.
+    Returns a simple JSON message.
+    """
     return {"message": "Survey API is running"}
 
 @app.get("/api/questions", response_model=schemas.QuestionList)
 def get_questions(db: Session = Depends(get_db)):
     """
-    Fetch list of all survey questions.
-    
+    Fetch all survey questions from the database.
+
+    Args:
+        db (Session): SQLAlchemy database session.
+
     Returns:
-        schemas.QuestionList: List of all questions with their options
+        dict: Dictionary containing list of questions with options or file properties.
     """
-    # Get all questions from database
     db_questions = db.query(models.Question).order_by(models.Question.id).all()
-    
-    # Convert to schema format
     questions = []
+
     for q in db_questions:
-        question_data = {
+        item = {
             "name": q.name,
             "type": q.type,
             "required": "yes" if q.required else "no",
             "text": q.text,
             "description": q.description or ""
         }
-        
-        # Add options for choice-type questions
+
         if q.type == "choice":
-            options = db.query(models.QuestionOption).filter(
-                models.QuestionOption.question_id == q.id
-            ).all()
-            
-            question_data["options"] = {
+            opts = db.query(models.QuestionOption).filter_by(question_id=q.id).all()
+            item["options"] = {
                 "multiple": "yes" if q.multiple_choice else "no",
-                "option": [
-                    {"value": opt.value, "text": opt.text}
-                    for opt in options
-                ]
+                "option": [{"value": o.value, "text": o.text} for o in opts]
             }
-        
-        # Add file properties for file-type questions
+
         if q.type == "file":
-            question_data["file_properties"] = {
+            item["file_properties"] = {
                 "format": q.file_format,
                 "max_file_size": q.max_file_size,
                 "max_file_size_unit": q.max_file_size_unit,
                 "multiple": "yes" if q.multiple_files else "no"
             }
-            
-        questions.append(question_data)
-    
+
+        questions.append(item)
+
     return {"question": questions}
 
 @app.put("/api/questions/responses", response_model=schemas.QuestionResponse)
@@ -98,162 +104,139 @@ async def submit_response(
     db: Session = Depends(get_db)
 ):
     """
-    Submit a response to the survey.
-    
+    Submit a survey response and save uploaded PDF certificates.
+
     Args:
-        full_name: Full name of the respondent
-        email_address: Email address of the respondent
-        description: Self-description
-        gender: Gender selection
-        programming_stack: Comma-separated programming technologies
-        certificates: List of certificate files
-        
+        full_name (str): Respondent's full name.
+        email_address (str): Respondent's email address.
+        description (str): Self-description text.
+        gender (str): Respondent's gender.
+        programming_stack (str): Comma-separated programming technologies.
+        certificates (List[UploadFile]): List of PDF files uploaded.
+        db (Session): SQLAlchemy database session.
+
+    Raises:
+        HTTPException: If uploaded file is not a PDF.
+
     Returns:
-        schemas.QuestionResponse: The submitted response data
+        dict: Submitted response data including saved certificate filenames.
     """
-    # Create new response in database
-    new_response = models.Response(
+    resp = models.Response(
         full_name=full_name,
         email_address=email_address,
         description=description,
         gender=gender,
         programming_stack=programming_stack,
-        date_responded=datetime.now()
+        date_responded=datetime.utcnow()
     )
-    db.add(new_response)
-    db.flush()  # Get ID without committing
-    
-    # Save uploaded certificates
-    cert_filenames = []
+    db.add(resp)
+    db.flush()
+
+    saved_filenames = []
     for cert in certificates:
-        # Generate unique filename
-        file_extension = os.path.splitext(cert.filename)[1]
-        if file_extension.lower() != '.pdf':
+        ext = os.path.splitext(cert.filename)[1].lower()
+        if ext != ".pdf":
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
-        
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = UPLOAD_DIR / unique_filename
-        
-        # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(cert.file, buffer)
-        
-        # Add to database
-        new_certificate = models.Certificate(
-            response_id=new_response.id,
+
+        unique_name = f"{uuid.uuid4()}{ext}"
+        dest = UPLOAD_DIR / unique_name
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(cert.file, out)
+
+        cert_record = models.Certificate(
+            response_id=resp.id,
             filename=cert.filename,
-            filepath=str(file_path)
+            filepath=str(dest)
         )
-        db.add(new_certificate)
-        cert_filenames.append(cert.filename)
-    
+        db.add(cert_record)
+        saved_filenames.append(cert.filename)
+
     db.commit()
-    
-    # Prepare response
+
     return {
         "full_name": full_name,
         "email_address": email_address,
         "description": description,
         "gender": gender,
         "programming_stack": programming_stack,
-        "certificates": {
-            "certificate": cert_filenames
-        },
-        "date_responded": new_response.date_responded.strftime("%Y-%m-%d %H:%M:%S")
+        "certificates": {"certificate": saved_filenames},
+        "date_responded": resp.date_responded.strftime("%Y-%m-%d %H:%M:%S")
     }
 
 @app.get("/api/questions/responses", response_model=schemas.QuestionResponseList)
 def get_responses(
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(10, ge=1, le=100, description="Number of items per page"),
-    email_address: Optional[str] = Query(None, description="Filter by email address"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    email_address: Optional[str] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
-    Fetch all submitted responses with pagination.
-    
+    Get paginated list of submitted survey responses.
+
     Args:
-        page: Page number (starts at 1)
-        page_size: Number of items per page
-        email_address: Optional filter by email address
-        
+        page (int): Page number (starts at 1).
+        page_size (int): Number of items per page.
+        email_address (Optional[str]): Filter responses by email.
+        db (Session): SQLAlchemy database session.
+
     Returns:
-        schemas.QuestionResponseList: Paginated list of responses
+        dict: Pagination info and list of responses.
     """
-    # Build query
     query = db.query(models.Response)
-    
-    # Apply email filter if provided
     if email_address:
         query = query.filter(models.Response.email_address == email_address)
-    
-    # Get total count for pagination
-    total_count = query.count()
-    
-    # Calculate pagination parameters
+
+    total = query.count()
     offset = (page - 1) * page_size
-    last_page = (total_count + page_size - 1) // page_size  # Ceiling division
-    
-    # Get paginated responses
-    responses = query.order_by(models.Response.date_responded.desc()).offset(offset).limit(page_size).all()
-    
-    # Build response data
+    last_page = (total + page_size - 1) // page_size
+
+    records = (
+        query
+        .order_by(models.Response.date_responded.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+
     result = []
-    for resp in responses:
-        # Get certificates for this response
-        certificates = db.query(models.Certificate).filter(
-            models.Certificate.response_id == resp.id
-        ).all()
-        
-        # Format certificates
-        cert_data = [
-            {"id": cert.id, "text": cert.filename} 
-            for cert in certificates
-        ]
-        
-        # Add response to result
+    for r in records:
+        certs = db.query(models.Certificate).filter_by(response_id=r.id).all()
+        cert_data = [{"id": c.id, "text": c.filename} for c in certs]
         result.append({
-            "response_id": resp.id,
-            "full_name": resp.full_name,
-            "email_address": resp.email_address,
-            "description": resp.description,
-            "gender": resp.gender,
-            "programming_stack": resp.programming_stack,
-            "certificates": {
-                "certificate": cert_data
-            },
-            "date_responded": resp.date_responded.strftime("%Y-%m-%d %H:%M:%S")
+            "response_id": r.id,
+            "full_name": r.full_name,
+            "email_address": r.email_address,
+            "description": r.description,
+            "gender": r.gender,
+            "programming_stack": r.programming_stack,
+            "certificates": {"certificate": cert_data},
+            "date_responded": r.date_responded.strftime("%Y-%m-%d %H:%M:%S")
         })
-    
-    # Return paginated response
+
     return {
         "current_page": page,
         "last_page": last_page,
         "page_size": page_size,
-        "total_count": total_count,
+        "total_count": total,
         "question_response": result
     }
 
 @app.get("/api/questions/responses/certificates/{id}")
 def download_certificate(id: int, db: Session = Depends(get_db)):
     """
-    Download a certificate file by its ID.
-    
+    Download a previously uploaded certificate by ID.
+
     Args:
-        id: Certificate ID
-        
+        id (int): Certificate database ID.
+        db (Session): SQLAlchemy database session.
+
+    Raises:
+        HTTPException: If certificate is not found.
+
     Returns:
-        FileResponse: The requested certificate file
+        FileResponse: PDF file response.
     """
-    # Get certificate from database
-    certificate = db.query(models.Certificate).filter(models.Certificate.id == id).first()
-    
-    if not certificate:
+    cert = db.query(models.Certificate).filter_by(id=id).first()
+    if not cert:
         raise HTTPException(status_code=404, detail="Certificate not found")
-    
-    # Return file as response
-    return FileResponse(
-        path=certificate.filepath,
-        filename=certificate.filename,
-        media_type="application/pdf"
-    )
+    return FileResponse(path=cert.filepath, filename=cert.filename, media_type="application/pdf")
