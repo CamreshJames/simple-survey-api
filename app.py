@@ -5,10 +5,10 @@ FastAPI application for handling survey questions and responses, including file 
 Files are stored in Vercel's writable `/tmp/uploads` directory.
 """
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Query # type: ignore
+from fastapi.responses import FileResponse # type: ignore
+from fastapi.middleware.cors import CORSMiddleware # type: ignore
+from sqlalchemy.orm import Session # type: ignore
 from typing import List, Optional
 from datetime import datetime
 from pathlib import Path
@@ -31,13 +31,17 @@ app = FastAPI(
     description="API for survey application"
 )
 
-# Configure CORS middleware
+origins = [
+    "http://localhost:5173",
+    "https://simple-survey-client-lilac.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origins,  # Allows requests from specified origins
     allow_credentials=True,
+    allow_methods=["*"],    # Allows all HTTP methods
+    allow_headers=["*"],    # Allows all headers
 )
 
 # Create database tables on startup
