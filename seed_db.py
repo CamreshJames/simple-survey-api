@@ -2,7 +2,7 @@
 Seed script to populate the database with initial data.
 Run this script after creating the database to populate it with sample questions.
 """
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session # type: ignore
 from database import get_db, engine, Base
 import models
 
