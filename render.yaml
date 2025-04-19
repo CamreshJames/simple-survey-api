@@ -3,6 +3,6 @@ services:
     name: simple-survey-api
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python seed.py && uvicorn app:app --host 0.0.0.0 --port 10000
+    startCommand: python seed_db.py && uvicorn app:app --host 0.0.0.0 --port 10000
     plan: free
     branch: main
