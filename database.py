@@ -9,7 +9,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://postgres:postgres@localhost:5432/sky_survey_db"
+    "postgresql://postgres:I-Love-Money+100%@db.dwjtyedtetjfduyvoelh.supabase.co:5432/sky_survey_db"
 )
 
 # Create SQLAlchemy engine
