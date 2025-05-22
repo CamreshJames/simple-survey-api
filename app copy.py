@@ -38,11 +38,12 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://simple-survey-client-lilac.vercel.app"],  # Specific allowed origin
+    allow_origins=origins,  # Allows requests from specified origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],  # Allow all headers (or specify specific headers like ["Content-Type", "Authorization"])
+    allow_methods=["*"],    # Allows all HTTP methods
+    allow_headers=["*"],    # Allows all headers
 )
+
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
 
