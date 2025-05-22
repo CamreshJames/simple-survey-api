@@ -41,8 +41,9 @@ app.add_middleware(
     allow_origins=["https://simple-survey-client-lilac.vercel.app"],  # Specific allowed origin
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],  # Allow all headers (or specify specific headers like ["Content-Type", "Authorization"])
+    allow_headers=["*"],
 )
+
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
 

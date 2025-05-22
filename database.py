@@ -9,7 +9,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql://postgres.dwjtyedtetjfduyvoelh:I-Love-Money+100%@aws-0-us-east-2.pooler.supabase.com:5432/postgres"
+    "postgresql://neondb_owner:npg_0uRfaXd7SIBK@ep-patient-snowflake-a5ehetef-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
 )
 
 # Create SQLAlchemy engine
